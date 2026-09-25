@@ -37,7 +37,7 @@ PULUMI  := docker run --rm --network kind -v $(CURDIR):/src -w /src/infra \
 OBSERVABILITY ?= false
 
 .DEFAULT_GOAL := help
-.PHONY: help build run run-observability stop logs wait cluster up up-observability down \
+.PHONY: help build push-image run run-observability stop logs wait cluster host-kubeconfig pulumi-preview up up-observability down \
         forward forward-grafana \
         test test-unit test-infra test-integration test-postman \
         lint vuln scan scan-fs scan-image ci
@@ -76,13 +76,29 @@ cluster:
 	@docker inspect $(REGISTRY_NAME) >/dev/null 2>&1 || \
 		docker run -d --restart=always --network kind -p 127.0.0.1:5002:5000 --name $(REGISTRY_NAME) registry:3.1.2
 
+# Pulumi runs on Docker's kind network and needs the internal endpoint. Local
+# kubectl and port-forward run on the host, so keep a separate fresh config
+# instead of relying on a potentially stale entry in ~/.kube/config.
+host-kubeconfig: cluster ## Refresh the host kubeconfig used by port-forwards
+	kind get kubeconfig --name $(KIND_CLUSTER) > infra/.kubeconfig-host
+
 # The image is tagged with its own content hash, so Kubernetes only rolls
 # out a new version when the image actually changed.
-up: build cluster ## Kind cluster + local registry, push the image, pulumi up
+push-image: build cluster ## Push the content-addressed image to the Kind registry
+	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
+	docker tag $(IMAGE) $$image && docker push -q $$image && echo "Pushed $$image"
+
+pulumi-preview: push-image ## Preview the exact Kind deployment without applying it
 	@mkdir -p infra/.pulumi-state
 	kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig
 	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
-	docker tag $(IMAGE) $$image && docker push -q $$image && \
+	$(PULUMI) "pulumi stack select --create dev && pulumi config set image $$image && \
+		pulumi config set observability $(OBSERVABILITY) && pulumi preview --diff --non-interactive"
+
+up: push-image ## Kind cluster + local registry, push the image, pulumi up
+	@mkdir -p infra/.pulumi-state
+	kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig
+	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
 	$(PULUMI) "pulumi stack select --create dev && pulumi config set image $$image && \
 		pulumi config set observability $(OBSERVABILITY) && pulumi up --yes --skip-preview"
 	@echo "Deployed. Try: make forward, then curl localhost:8081/hello"
@@ -97,11 +113,11 @@ down: ## pulumi destroy, then delete the Kind cluster and registry
 	kind delete cluster --name $(KIND_CLUSTER)
 	docker rm -f $(REGISTRY_NAME)
 
-forward: ## Port-forward the Kind service to localhost:8081
-	kubectl --context kind-$(KIND_CLUSTER) port-forward svc/echo-service 8081:80
+forward: host-kubeconfig ## Port-forward the Kind service to localhost:8081
+	kubectl --kubeconfig infra/.kubeconfig-host port-forward svc/echo-service 8081:80
 
-forward-grafana: ## Port-forward Grafana in Kind to localhost:3001
-	kubectl --context kind-$(KIND_CLUSTER) -n observability port-forward svc/grafana 3001:80
+forward-grafana: host-kubeconfig ## Port-forward Grafana in Kind to localhost:3001
+	kubectl --kubeconfig infra/.kubeconfig-host -n observability port-forward svc/grafana 3001:80
 
 test: test-unit test-infra test-integration test-postman ## Run every test suite
 

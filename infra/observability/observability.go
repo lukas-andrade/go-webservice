@@ -63,6 +63,9 @@ func New(ctx *pulumi.Context, name string, args Args, opts ...pulumi.ResourceOpt
 	if err := newMimir(ctx, filepath.Join(args.ConfigDir, "mimir.yaml"), inNamespace); err != nil {
 		return nil, err
 	}
+	if err := newGrafanaDashboard(ctx, filepath.Join(args.ConfigDir, "echo-service-dashboard.json"), inNamespace); err != nil {
+		return nil, err
+	}
 
 	datasources, err := readYAML(filepath.Join(args.ConfigDir, "grafana-datasources.yaml"))
 	if err != nil {
@@ -95,9 +98,30 @@ func New(ctx *pulumi.Context, name string, args Args, opts ...pulumi.ResourceOpt
 	})
 }
 
+func newGrafanaDashboard(ctx *pulumi.Context, dashboardPath string, opts []pulumi.ResourceOption) error {
+	// #nosec G304 -- dashboardPath is assembled from the repository-owned
+	// observability configuration directory and a fixed file name.
+	dashboard, err := os.ReadFile(dashboardPath)
+	if err != nil {
+		return fmt.Errorf("read Grafana dashboard: %w", err)
+	}
+
+	_, err = corev1.NewConfigMap(ctx, "echo-service-dashboard", &corev1.ConfigMapArgs{
+		Metadata: &metav1.ObjectMetaArgs{
+			Name:      pulumi.String("echo-service-dashboard"),
+			Namespace: pulumi.String(namespace),
+			Labels:    pulumi.StringMap{"grafana_dashboard": pulumi.String("1")},
+		},
+		Data: pulumi.StringMap{"echo-service-overview.json": pulumi.String(dashboard)},
+	}, opts...)
+	return err
+}
+
 // Mimir's only chart is the microservices one, which is ten-plus pods. For a
 // local cluster the single-process mode with the compose config is enough.
 func newMimir(ctx *pulumi.Context, configPath string, opts []pulumi.ResourceOption) error {
+	// #nosec G304 -- configPath is assembled from the repository-owned
+	// observability configuration directory and a fixed file name.
 	config, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read mimir config: %w", err)
@@ -158,6 +182,7 @@ func newMimir(ctx *pulumi.Context, configPath string, opts []pulumi.ResourceOpti
 }
 
 func readYAML(path string) (map[string]any, error) {
+	// #nosec G304 -- callers pass only repository-owned observability config paths.
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)

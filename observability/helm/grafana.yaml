@@ -6,3 +6,8 @@ grafana.ini:
   auth.anonymous:
     enabled: true
     org_role: Admin
+
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard

@@ -61,6 +61,17 @@ func TestNewInstallsTheWholeStack(t *testing.T) {
 		t.Error("Mimir ConfigMap should carry observability/mimir.yaml")
 	}
 
+	dashboard, ok := mocks.resources["kubernetes:core/v1:ConfigMap::echo-service-dashboard"]
+	if !ok {
+		t.Fatal("no Grafana dashboard ConfigMap")
+	}
+	dashboardJSON := dashboard["data"].ObjectValue()["echo-service-overview.json"].StringValue()
+	for _, expected := range []string{"Echo Service Overview", "HTTP 5xx error rate", "p95 request latency", "Logs"} {
+		if !strings.Contains(dashboardJSON, expected) {
+			t.Errorf("dashboard is missing %q", expected)
+		}
+	}
+
 	grafana := mocks.resources["kubernetes:helm.sh/v3:Release::grafana"]
 	datasources := grafana["values"].ObjectValue()["datasources"].ObjectValue()["datasources.yaml"].ObjectValue()
 	if n := len(datasources["datasources"].ArrayValue()); n != 3 {

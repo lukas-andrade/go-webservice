@@ -160,14 +160,61 @@ Needs Docker, [Kind](https://kind.sigs.k8s.io/) and `kubectl`. Pulumi runs
 in a container, so it doesn't need to be installed.
 
 ```sh
-make up        # cluster + registry, build and push the image, pulumi up
-make forward   # port-forward the Service to localhost:8081
-curl -s localhost:8081/hello
+./scripts/ci.sh # Kind + Pulumi preview + apply + echo request
 make down      # pulumi destroy, then delete the cluster and registry
 ```
 
-`make up` is safe to run again: it only creates what's missing, and a rerun
-with no code changes reports `4 unchanged`.
+The script is the quickest local demonstration. It builds and pushes the
+image, runs `make pulumi-preview`, applies the same plan with `make up`, then
+port-forwards the Service and sends an Echo request. In an interactive shell,
+the port-forward stays available on `http://localhost:8081` until `Ctrl-C`.
+
+The underlying Make targets are also available individually:
+
+```sh
+make pulumi-preview
+make up
+make forward
+curl -s localhost:8081/hello
+```
+
+### Optional observability
+
+Grafana, Loki, Mimir, Tempo and the OpenTelemetry Collector are intentionally
+outside the default exercise flow. They are useful for local experimentation,
+but are not required to build, test, containerize or deploy the Echo service.
+
+```sh
+make run-observability  # Docker Compose stack
+make up-observability   # Kind + Pulumi stack
+make forward-grafana    # Grafana on http://localhost:3001
+```
+
+The Pulumi component provisions Grafana's **Echo Service Overview** dashboard:
+request rate, HTTP 5xx rate, p95 latency and logs. The Grafana Helm sidecar
+loads it from a ConfigMap deployed alongside the stack.
+
+## CI script
+
+The challenge workflow is available locally and is also called by GitHub
+Actions on each push and pull request:
+
+```sh
+./scripts/ci.sh
+./scripts/ci.sh --ci
+./scripts/ci.sh --ci --observability
+./scripts/ci.sh --help
+```
+
+Without flags, the script only demonstrates the Kind/Pulumi deployment and
+the Echo endpoint. `--ci` first runs lint, all tests and security scans.
+Observability is intentionally opt-in; it deploys the LGTM stack through
+Pulumi, verifies Grafana and keeps a port-forward on `http://localhost:3001`
+in an interactive shell:
+
+```sh
+./scripts/ci.sh --observability
+```
 
 How it fits together:
 

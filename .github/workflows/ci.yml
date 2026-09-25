@@ -24,15 +24,12 @@ jobs:
       - run: make lint
 
   test:
-    name: Unit, integration and Postman tests
+    name: Test, build and push image
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: make test-unit
-      - run: make test-infra
-      - run: make test-integration
-      - run: make test-postman
+      - run: ./scripts/ci.sh --ci
       - if: failure()
         run: docker compose logs echo
       - if: always()
