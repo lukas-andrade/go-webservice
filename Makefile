@@ -3,9 +3,10 @@ IMAGE   ?= echo-service:local
 
 # Matches infra/kind/cluster.yaml. Port 5002 because the kind docs' 5001 is
 # often taken by another project's registry.
-KIND_CLUSTER  := go-webservice
-REGISTRY_NAME := go-webservice-registry
-REGISTRY      := localhost:5002
+KIND_CLUSTER    := go-webservice
+KIND_NODE_IMAGE := kindest/node:v1.33.1
+REGISTRY_NAME   := go-webservice-registry
+REGISTRY        := localhost:5002
 
 GO_IMAGE     := golang:1.27.1
 LINT_IMAGE   := golangci/golangci-lint:v2.14.0
@@ -57,6 +58,7 @@ wait: run
 # Inside the node, localhost:5002 is the node itself, so containerd is told
 # to pull those images from the registry container on the kind network.
 cluster:
+	@docker pull --platform linux/arm64 $(KIND_NODE_IMAGE) 2>/dev/null || true
 	@kind get clusters | grep -qx $(KIND_CLUSTER) || kind create cluster --config infra/kind/cluster.yaml
 	@docker exec $(KIND_CLUSTER)-control-plane sh -c 'mkdir -p /etc/containerd/certs.d/$(REGISTRY) && \
 		echo "[host.\"http://$(REGISTRY_NAME):5000\"]" > /etc/containerd/certs.d/$(REGISTRY)/hosts.toml'
