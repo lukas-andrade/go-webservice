@@ -33,3 +33,8 @@ go.work.sum
 
 # Local scan artifacts
 .scan/
+
+# Pulumi local state, generated stack config and kubeconfig
+infra/.pulumi-state/
+infra/Pulumi.*.yaml
+infra/.kubeconfig
