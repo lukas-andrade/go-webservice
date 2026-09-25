@@ -83,6 +83,17 @@ func TestNewCreatesDeploymentAndService(t *testing.T) {
 	}
 }
 
+func TestNewPassesOTLPEndpoint(t *testing.T) {
+	mocks := deploy(t, Args{Image: "echo:dev", OTLPEndpoint: "http://collector:4318"})
+
+	spec := mocks.resources["kubernetes:apps/v1:Deployment"]["spec"].ObjectValue()
+	c := spec["template"].ObjectValue()["spec"].ObjectValue()["containers"].ArrayValue()[0].ObjectValue()
+	env := c["env"].ArrayValue()
+	if len(env) != 1 || env[0].ObjectValue()["value"].StringValue() != "http://collector:4318" {
+		t.Errorf("env = %v, want OTEL_EXPORTER_OTLP_ENDPOINT", env)
+	}
+}
+
 func TestNewDefaultsToOneReplica(t *testing.T) {
 	mocks := deploy(t, Args{Image: "echo:dev"})
 

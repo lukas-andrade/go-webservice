@@ -17,6 +17,8 @@ const (
 type Args struct {
 	Image    string
 	Replicas int
+	// OTLPEndpoint turns on tracing in the service when set.
+	OTLPEndpoint string
 }
 
 // EchoService groups the Deployment and Service into one Pulumi component,
@@ -55,7 +57,7 @@ func New(ctx *pulumi.Context, name string, args Args, opts ...pulumi.ResourceOpt
 			Template: &corev1.PodTemplateSpecArgs{
 				Metadata: &metav1.ObjectMetaArgs{Labels: labels},
 				Spec: &corev1.PodSpecArgs{
-					Containers: corev1.ContainerArray{container(name, args.Image)},
+					Containers: corev1.ContainerArray{container(name, args)},
 					SecurityContext: &corev1.PodSecurityContextArgs{
 						RunAsNonRoot:   pulumi.Bool(true),
 						SeccompProfile: &corev1.SeccompProfileArgs{Type: pulumi.String("RuntimeDefault")},
@@ -92,15 +94,23 @@ func New(ctx *pulumi.Context, name string, args Args, opts ...pulumi.ResourceOpt
 }
 
 // Probes hit the admin port, which is where the service exposes health.
-func container(name, image string) *corev1.ContainerArgs {
+func container(name string, args Args) *corev1.ContainerArgs {
 	probe := func(path string) *corev1.ProbeArgs {
 		return &corev1.ProbeArgs{
 			HttpGet: &corev1.HTTPGetActionArgs{Path: pulumi.String(path), Port: pulumi.String("admin")},
 		}
 	}
+	var env corev1.EnvVarArray
+	if args.OTLPEndpoint != "" {
+		env = append(env, &corev1.EnvVarArgs{
+			Name:  pulumi.String("OTEL_EXPORTER_OTLP_ENDPOINT"),
+			Value: pulumi.String(args.OTLPEndpoint),
+		})
+	}
 	return &corev1.ContainerArgs{
 		Name:  pulumi.String(name),
-		Image: pulumi.String(image),
+		Image: pulumi.String(args.Image),
+		Env:   env,
 		Ports: corev1.ContainerPortArray{
 			&corev1.ContainerPortArgs{Name: pulumi.String("http"), ContainerPort: pulumi.Int(httpPort)},
 			&corev1.ContainerPortArgs{Name: pulumi.String("admin"), ContainerPort: pulumi.Int(adminPort)},

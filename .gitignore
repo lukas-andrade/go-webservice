@@ -38,3 +38,5 @@ go.work.sum
 infra/.pulumi-state/
 infra/Pulumi.*.yaml
 infra/.kubeconfig
+infra/.kubeconfig-host
+infra/pulumi-preview.yaml

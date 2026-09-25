@@ -9,3 +9,7 @@ config:
   replicas:
     type: integer
     default: 2
+  observability:
+    type: boolean
+    description: Also install the OTel Collector, Tempo, Mimir, Loki and Grafana
+    default: false
