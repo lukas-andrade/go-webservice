@@ -1,6 +1,11 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: go-webservice
+# Pin to a version with native arm64 images; the kind default (v1.37.0) is
+# amd64-only and fails to start the control plane under QEMU emulation.
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.33.1
 # Lets containerd read per-registry settings from certs.d, which the
 # Makefile uses to point localhost:5002 at the local registry container.
 containerdConfigPatches:

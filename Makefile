@@ -1,11 +1,16 @@
 COMPOSE ?= docker compose
 IMAGE   ?= echo-service:local
 
+# Detect host architecture so docker build and kind use the native platform
+# on both Apple Silicon (arm64) and Linux/CI (amd64).
+ARCH := $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+
 # Matches infra/kind/cluster.yaml. Port 5002 because the kind docs' 5001 is
 # often taken by another project's registry.
-KIND_CLUSTER  := go-webservice
-REGISTRY_NAME := go-webservice-registry
-REGISTRY      := localhost:5002
+KIND_CLUSTER    := go-webservice
+KIND_NODE_IMAGE := kindest/node:v1.33.1
+REGISTRY_NAME   := go-webservice-registry
+REGISTRY        := localhost:5002
 
 GO_IMAGE     := golang:1.27.1
 LINT_IMAGE   := golangci/golangci-lint:v2.14.0
@@ -39,7 +44,7 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build: ## Build the echo-service image
-	docker build -t $(IMAGE) .
+	docker build --platform linux/$(ARCH) -t $(IMAGE) .
 
 run: build ## Run the echo-service with docker compose on :8080 (admin on :9090)
 	$(COMPOSE) up -d echo
@@ -57,7 +62,9 @@ wait: run
 # Inside the node, localhost:5002 is the node itself, so containerd is told
 # to pull those images from the registry container on the kind network.
 cluster:
-	@kind get clusters | grep -qx $(KIND_CLUSTER) || kind create cluster --config infra/kind/cluster.yaml
+	@docker pull --platform linux/$(ARCH) $(KIND_NODE_IMAGE)
+	@kind get clusters | grep -qx $(KIND_CLUSTER) || \
+		DOCKER_DEFAULT_PLATFORM= kind create cluster --config infra/kind/cluster.yaml
 	@docker exec $(KIND_CLUSTER)-control-plane sh -c 'mkdir -p /etc/containerd/certs.d/$(REGISTRY) && \
 		echo "[host.\"http://$(REGISTRY_NAME):5000\"]" > /etc/containerd/certs.d/$(REGISTRY)/hosts.toml'
 	@docker inspect $(REGISTRY_NAME) >/dev/null 2>&1 || \
