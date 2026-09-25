@@ -1,0 +1,62 @@
+# One collector per node: it tails pod logs from the node, scrapes the
+# echo pods on that node, and accepts OTLP traces from the service.
+mode: daemonset
+fullnameOverride: otel-collector
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: 0.161.0
+
+presets:
+  logsCollection:
+    enabled: true
+  # Adds pod and deployment names to every signal, and grants the RBAC the
+  # prometheus receiver needs to discover pods.
+  kubernetesAttributes:
+    enabled: true
+
+service:
+  enabled: true
+
+config:
+  receivers:
+    prometheus:
+      config:
+        scrape_configs:
+          - job_name: echo-service
+            scrape_interval: 10s
+            kubernetes_sd_configs:
+              - role: pod
+                selectors:
+                  - role: pod
+                    field: spec.nodeName=${env:K8S_NODE_NAME}
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+                regex: echo-service
+                action: keep
+              - source_labels: [__meta_kubernetes_pod_container_port_name]
+                regex: admin
+                action: keep
+
+  exporters:
+    otlphttp/tempo:
+      endpoint: http://tempo:4318
+    otlphttp/mimir:
+      endpoint: http://mimir:9009/otlp
+    otlphttp/loki:
+      endpoint: http://loki:3100/otlp
+
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [otlphttp/tempo]
+      metrics:
+        receivers: [otlp, prometheus]
+        processors: [memory_limiter, batch]
+        exporters: [otlphttp/mimir]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [otlphttp/loki]

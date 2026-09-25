@@ -25,13 +25,15 @@ TRIVY   := docker run --rm -v $(CURDIR):/src:ro -w /src -v trivycache:/root/.cac
 # Pulumi joins the kind network and uses the cluster's internal kubeconfig.
 # State lives in infra/.pulumi-state; the passphrase only guards secrets in
 # that local file, and this stack has none.
-PULUMI  := docker run --rm --network kind -v $(CURDIR)/infra:/infra -w /infra \
+PULUMI  := docker run --rm --network kind -v $(CURDIR):/src -w /src/infra \
            -v gomodcache:/go/pkg/mod -v gobuildcache:/root/.cache/go-build \
-           -e PULUMI_BACKEND_URL=file:///infra/.pulumi-state -e PULUMI_CONFIG_PASSPHRASE= \
-           -e KUBECONFIG=/infra/.kubeconfig --entrypoint sh $(PULUMI_IMAGE) -c
+           -e PULUMI_BACKEND_URL=file:///src/infra/.pulumi-state -e PULUMI_CONFIG_PASSPHRASE= \
+           -e KUBECONFIG=/src/infra/.kubeconfig --entrypoint sh $(PULUMI_IMAGE) -c
+OBSERVABILITY ?= false
 
 .DEFAULT_GOAL := help
-.PHONY: help build run stop logs wait cluster up down forward \
+.PHONY: help build run run-observability stop logs wait cluster up up-observability down \
+        forward forward-grafana \
         test test-unit test-infra test-integration test-postman \
         lint vuln scan scan-fs scan-image ci
 
@@ -44,8 +46,12 @@ build: ## Build the echo-service image
 run: build ## Run the echo-service with docker compose on :8080 (admin on :9090)
 	$(COMPOSE) up -d echo
 
-stop: ## Stop the docker compose service
-	$(COMPOSE) down --remove-orphans
+run-observability: build ## Run echo plus OTel Collector, Tempo, Mimir, Loki and Grafana (:3000)
+	$(COMPOSE) -f compose.yaml -f compose.observability.yaml up -d
+	@echo "Grafana: http://localhost:3000 (Explore -> Mimir, Loki or Tempo)"
+
+stop: ## Stop everything started with docker compose
+	$(COMPOSE) -f compose.yaml -f compose.observability.yaml down --remove-orphans
 
 logs: ## Follow the docker compose logs
 	$(COMPOSE) logs -f echo
@@ -70,8 +76,13 @@ up: build cluster ## Kind cluster + local registry, push the image, pulumi up
 	kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig
 	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
 	docker tag $(IMAGE) $$image && docker push -q $$image && \
-	$(PULUMI) "pulumi stack select --create dev && pulumi config set image $$image && pulumi up --yes --skip-preview"
+	$(PULUMI) "pulumi stack select --create dev && pulumi config set image $$image && \
+		pulumi config set observability $(OBSERVABILITY) && pulumi up --yes --skip-preview"
 	@echo "Deployed. Try: make forward, then curl localhost:8081/hello"
+
+up-observability: ## Same as up, plus the observability stack installed with Helm
+	$(MAKE) up OBSERVABILITY=true
+	@echo "Grafana: make forward-grafana, then open http://localhost:3001"
 
 down: ## pulumi destroy, then delete the Kind cluster and registry
 	-kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig && \
@@ -81,6 +92,9 @@ down: ## pulumi destroy, then delete the Kind cluster and registry
 
 forward: ## Port-forward the Kind service to localhost:8081
 	kubectl --context kind-$(KIND_CLUSTER) port-forward svc/echo-service 8081:80
+
+forward-grafana: ## Port-forward Grafana in Kind to localhost:3001
+	kubectl --context kind-$(KIND_CLUSTER) -n observability port-forward svc/grafana 3001:80
 
 test: test-unit test-infra test-integration test-postman ## Run every test suite
 

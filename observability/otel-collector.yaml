@@ -1,0 +1,50 @@
+# One collector in front of every backend: traces arrive over OTLP, metrics
+# are scraped from the admin port, logs come from Docker's fluentd driver.
+# Everything leaves over OTLP, which Tempo, Mimir and Loki all accept.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: echo-service
+          scrape_interval: 10s
+          static_configs:
+            - targets: ["echo:9090"]
+  fluentforward:
+    endpoint: 0.0.0.0:8006
+
+processors:
+  batch: {}
+  resource/logs:
+    attributes:
+      - key: service.name
+        value: echo-service
+        action: upsert
+
+exporters:
+  otlphttp/tempo:
+    endpoint: http://tempo:4318
+  otlphttp/mimir:
+    endpoint: http://mimir:9009/otlp
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/tempo]
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [batch]
+      exporters: [otlphttp/mimir]
+    logs:
+      receivers: [otlp, fluentforward]
+      processors: [resource/logs, batch]
+      exporters: [otlphttp/loki]
