@@ -1,0 +1,342 @@
+{
+  "info": {
+    "name": "echo-service",
+    "description": "Exercises the echo-service. `base_url` is the public port (echoes any path), `admin_url` is the admin port (health and metrics). Start the service with `make up` first.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Echo",
+      "item": [
+        {
+          "name": "1. GET with query params and headers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/products/7?color=red&color=blue&page=2",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "products",
+                "7"
+              ],
+              "query": [
+                {
+                  "key": "color",
+                  "value": "red"
+                },
+                {
+                  "key": "color",
+                  "value": "blue"
+                },
+                {
+                  "key": "page",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "Repeated query keys come back as arrays, in order.",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-Client",
+                "value": "postman"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
+                  "const echo = pm.response.json();",
+                  "pm.test('echoes the path', () => pm.expect(echo.Path).to.eql('/v1/products/7'));",
+                  "pm.test('keeps repeated params', () => pm.expect(echo.Params.color).to.eql(['red', 'blue']));",
+                  "pm.test('echoes headers', () => pm.expect(echo.Headers['X-Client']).to.eql('postman'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. POST JSON body",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            },
+            "description": "A valid JSON body is embedded as JSON, not as an escaped string.",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"A1\",\n  \"qty\": 3\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
+                  "const echo = pm.response.json();",
+                  "pm.test('body is returned as JSON', () => pm.expect(echo.Body).to.eql({ sku: 'A1', qty: 3 }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. PUT plain text body",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/notes/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notes",
+                "1"
+              ]
+            },
+            "description": "Anything that isn't valid JSON comes back as a string.",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "just some text"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
+                  "const echo = pm.response.json();",
+                  "pm.test('body is returned as a string', () => pm.expect(echo.Body).to.eql('just some text'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. DELETE with no body",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/sessions/abc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "sessions",
+                "abc"
+              ]
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
+                  "const echo = pm.response.json();",
+                  "pm.test('empty body is an empty string', () => pm.expect(echo.Body).to.eql(''));",
+                  "pm.test('params is an empty object', () => pm.expect(echo.Params).to.eql({}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Reserved-looking path is still echoed",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            },
+            "description": "Health and metrics live on the admin port, so the public port echoes every path.",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
+                  "const echo = pm.response.json();",
+                  "pm.test('echoes /metrics instead of serving metrics', () => pm.expect(echo.Path).to.eql('/metrics'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "1. Liveness",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{admin_url}}/healthz",
+              "host": [
+                "{{admin_url}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Readiness",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{admin_url}}/readyz",
+              "host": [
+                "{{admin_url}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            },
+            "description": "Returns 503 while the service is starting or shutting down.",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status ready', () => pm.expect(pm.response.json().status).to.eql('ready'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{admin_url}}/metrics",
+              "host": [
+                "{{admin_url}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('exposes request counter', () => pm.expect(pm.response.text()).to.include('http_requests_total'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

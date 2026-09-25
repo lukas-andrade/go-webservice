@@ -1,0 +1,30 @@
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - revive
+  settings:
+    revive:
+      rules:
+        # Everything lives under internal/, so doc comments on every
+        # exported name would just restate the name.
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [gosec, bodyclose]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Every job calls the same make targets you run locally, so CI and a laptop
+# can't drift apart.
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make lint
+
+  test:
+    name: Unit, integration and Postman tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make test-unit
+      - run: make test-integration
+      - run: make test-postman
+      - if: failure()
+        run: docker compose logs echo
+      - if: always()
+        run: make down
+
+  security:
+    name: Vulnerability scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: govulncheck
+        run: make vuln
+      - name: Trivy filesystem (deps, secrets, Dockerfile)
+        run: make scan-fs
+      - name: Trivy image
+        run: make scan-image
