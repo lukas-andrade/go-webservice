@@ -59,7 +59,8 @@ wait: run
 # to pull those images from the registry container on the kind network.
 cluster:
 	@docker pull --platform linux/arm64 $(KIND_NODE_IMAGE) 2>/dev/null || true
-	@kind get clusters | grep -qx $(KIND_CLUSTER) || kind create cluster --config infra/kind/cluster.yaml
+	@kind get clusters | grep -qx $(KIND_CLUSTER) || \
+		DOCKER_DEFAULT_PLATFORM= kind create cluster --config infra/kind/cluster.yaml
 	@docker exec $(KIND_CLUSTER)-control-plane sh -c 'mkdir -p /etc/containerd/certs.d/$(REGISTRY) && \
 		echo "[host.\"http://$(REGISTRY_NAME):5000\"]" > /etc/containerd/certs.d/$(REGISTRY)/hosts.toml'
 	@docker inspect $(REGISTRY_NAME) >/dev/null 2>&1 || \
