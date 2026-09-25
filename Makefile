@@ -1,12 +1,8 @@
 COMPOSE ?= docker compose
 IMAGE   ?= echo-service:local
 
-# Detect host architecture so docker build and kind use the native platform
-# on both Apple Silicon (arm64) and Linux/CI (amd64).
 ARCH := $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
-# Matches infra/kind/cluster.yaml. Port 5002 because the kind docs' 5001 is
-# often taken by another project's registry.
 KIND_CLUSTER    := go-webservice
 KIND_NODE_IMAGE := kindest/node:v1.33.1
 REGISTRY_NAME   := go-webservice-registry
@@ -18,26 +14,21 @@ TRIVY_IMAGE  := aquasec/trivy:0.74.0
 NEWMAN_IMAGE := postman/newman:6.1.3-alpine
 PULUMI_IMAGE := pulumi/pulumi-go:3.264.0
 
-# Tools run in throwaway containers, so the only local requirements are
-# Docker and, for the cluster, Kind. Tests that need the service join the
-# compose network and reach it as "echo".
 NETWORK := go-webservice_default
 GO      := docker run --rm -v $(CURDIR):/src -w /src \
            -v gomodcache:/go/pkg/mod -v gobuildcache:/root/.cache/go-build
 TRIVY   := docker run --rm -v $(CURDIR):/src:ro -w /src -v trivycache:/root/.cache/trivy \
            $(TRIVY_IMAGE) --severity HIGH,CRITICAL --exit-code 1
 
-# Pulumi joins the kind network and uses the cluster's internal kubeconfig.
-# State lives in infra/.pulumi-state; the passphrase only guards secrets in
-# that local file, and this stack has none.
 PULUMI  := docker run --rm --network kind -v $(CURDIR):/src -w /src/infra \
            -v gomodcache:/go/pkg/mod -v gobuildcache:/root/.cache/go-build \
            -e PULUMI_BACKEND_URL=file:///src/infra/.pulumi-state -e PULUMI_CONFIG_PASSPHRASE= \
            -e KUBECONFIG=/src/infra/.kubeconfig --entrypoint sh $(PULUMI_IMAGE) -c
 OBSERVABILITY ?= false
+FORWARD_PORT  ?= 8080
 
 .DEFAULT_GOAL := help
-.PHONY: help build push-image run run-observability stop logs wait cluster host-kubeconfig pulumi-preview up up-observability down \
+.PHONY: help build push-image run run-observability stop logs wait cluster host-kubeconfig pulumi-preview up deploy up-observability down \
         forward forward-grafana \
         test test-unit test-infra test-integration test-postman \
         lint vuln scan scan-fs scan-image ci
@@ -65,8 +56,6 @@ wait: run
 	@for i in $$(seq 30); do curl -sf localhost:9090/readyz >/dev/null && exit 0; sleep 1; done; \
 		echo "echo-service did not become ready"; exit 1
 
-# Inside the node, localhost:5002 is the node itself, so containerd is told
-# to pull those images from the registry container on the kind network.
 cluster:
 	@docker pull --platform linux/$(ARCH) $(KIND_NODE_IMAGE)
 	@kind get clusters | grep -qx $(KIND_CLUSTER) || \
@@ -76,14 +65,9 @@ cluster:
 	@docker inspect $(REGISTRY_NAME) >/dev/null 2>&1 || \
 		docker run -d --restart=always --network kind -p 127.0.0.1:5002:5000 --name $(REGISTRY_NAME) registry:3.1.2
 
-# Pulumi runs on Docker's kind network and needs the internal endpoint. Local
-# kubectl and port-forward run on the host, so keep a separate fresh config
-# instead of relying on a potentially stale entry in ~/.kube/config.
 host-kubeconfig: cluster ## Refresh the host kubeconfig used by port-forwards
 	kind get kubeconfig --name $(KIND_CLUSTER) > infra/.kubeconfig-host
 
-# The image is tagged with its own content hash, so Kubernetes only rolls
-# out a new version when the image actually changed.
 push-image: build cluster ## Push the content-addressed image to the Kind registry
 	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
 	docker tag $(IMAGE) $$image && docker push -q $$image && echo "Pushed $$image"
@@ -101,7 +85,9 @@ up: push-image ## Kind cluster + local registry, push the image, pulumi up
 	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
 	$(PULUMI) "pulumi stack select --create dev && pulumi config set image $$image && \
 		pulumi config set observability $(OBSERVABILITY) && pulumi up --yes --skip-preview"
-	@echo "Deployed. Try: make forward, then curl localhost:8081/hello"
+	@echo "Deployed. Run make forward, then curl localhost:8080/hello"
+
+deploy: pulumi-preview up ## Preview and apply one consistent image build
 
 up-observability: ## Same as up, plus the observability stack installed with Helm
 	$(MAKE) up OBSERVABILITY=true
@@ -113,8 +99,8 @@ down: ## pulumi destroy, then delete the Kind cluster and registry
 	kind delete cluster --name $(KIND_CLUSTER)
 	docker rm -f $(REGISTRY_NAME)
 
-forward: host-kubeconfig ## Port-forward the Kind service to localhost:8081
-	kubectl --kubeconfig infra/.kubeconfig-host port-forward svc/echo-service 8081:80
+forward: host-kubeconfig ## Port-forward the Kind service (FORWARD_PORT, default 8080)
+	kubectl --kubeconfig infra/.kubeconfig-host port-forward svc/echo-service $(FORWARD_PORT):80
 
 forward-grafana: host-kubeconfig ## Port-forward Grafana in Kind to localhost:3001
 	kubectl --kubeconfig infra/.kubeconfig-host -n observability port-forward svc/grafana 3001:80

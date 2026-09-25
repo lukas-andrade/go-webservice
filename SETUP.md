@@ -1,59 +1,59 @@
-# Setup local
+# Local setup
 
-## Pré-requisitos
+## Prerequisites
 
-- Docker em execução (com Docker Compose plugin)
+- Docker, with the Compose plugin, running
 - [Kind](https://kind.sigs.k8s.io/)
-- `kubectl`
-- `make`, `curl` e Bash
+- `kubectl`, `make`, `curl`, and Bash
 
-Go e Pulumi não precisam estar instalados na máquina: os comandos usam
-containers descartáveis para ambos. O primeiro uso baixa as imagens Docker
-necessárias.
+Go and Pulumi do not need to be installed on the host. The Make targets run
+them in disposable containers; the first run downloads the required images.
 
-## Deploy padrão no Kind
+## Deploy to Kind
 
 ```sh
 ./scripts/ci.sh
 ```
 
-O comando cria/reutiliza o cluster Kind e o registry local, executa `pulumi
-preview`, aplica o plano, cria um port-forward para o Echo Service e faz uma
-requisição de demonstração. Em um terminal interativo, o serviço continua
-disponível em `http://localhost:8081` até `Ctrl-C`.
+This creates or reuses the Kind cluster and local registry, previews the
+Pulumi update, applies it, port-forwards the Echo Service, and makes a sample
+request. It uses `http://localhost:8080` when that port is free; otherwise it
+prints a highlighted warning and uses `http://localhost:8081`. In an
+interactive terminal, the service remains available until you press `Ctrl-C`.
 
-## Checagens completas antes do deploy
+## Full checks before deployment
 
 ```sh
 ./scripts/ci.sh --ci
 ```
 
-Além do fluxo padrão, executa lint, testes unitários, testes de infraestrutura,
-testes de integração, Postman e scans de segurança.
+This runs linting, unit and infrastructure tests, integration and Postman
+tests, and security scans before deploying.
 
-## Observabilidade opcional
+## Optional observability
 
 ```sh
 ./scripts/ci.sh --observability
 ```
 
-Esse modo habilita o stack opcional via Pulumi: Grafana, Loki, Mimir, Tempo e
-OpenTelemetry Collector. O Grafana é port-forwarded para
-`http://localhost:3001` e já inclui o dashboard **Echo Service Overview**
-com logs, taxa de erros HTTP 5xx, latência p95 e taxa de requisições.
+This additionally deploys Grafana, Loki, Mimir, Tempo, and the OpenTelemetry
+Collector through Pulumi. Grafana is available at `http://localhost:3001` and
+includes the **Echo Service Overview** dashboard for request rate, HTTP 5xx
+rate, p95 latency, and logs.
 
-Para rodar todas as checagens e a observabilidade:
+Use both options when required:
 
 ```sh
 ./scripts/ci.sh --ci --observability
 ```
 
-## Comandos úteis
+## Useful commands
 
 ```sh
-make pulumi-preview  # mostra o plano sem aplicar recursos
-make forward          # Echo Service em http://localhost:8081
-make forward-grafana  # Grafana em http://localhost:3001
-make down             # remove recursos Pulumi, Kind e registry local
+make pulumi-preview  # show a plan without applying resources
+make deploy          # preview and apply one consistent image build
+make forward         # Echo Service at http://localhost:8080
+make forward-grafana # Grafana at http://localhost:3001
+make down            # remove Pulumi resources, Kind, and the local registry
 ./scripts/ci.sh --help
 ```

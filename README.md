@@ -164,19 +164,24 @@ in a container, so it doesn't need to be installed.
 make down      # pulumi destroy, then delete the cluster and registry
 ```
 
-The script is the quickest local demonstration. It builds and pushes the
-image, runs `make pulumi-preview`, applies the same plan with `make up`, then
-port-forwards the Service and sends an Echo request. In an interactive shell,
-the port-forward stays available on `http://localhost:8081` until `Ctrl-C`.
+The script is the quickest local demonstration. It runs `make deploy`, which
+builds and pushes one image, previews its exact Pulumi plan, then applies that
+same image. It then port-forwards the Service and sends an Echo request. It
+uses `http://localhost:8080` when available; otherwise, it prints a
+highlighted warning and uses `http://localhost:8081`. In an interactive shell,
+the port-forward stays available until `Ctrl-C`.
 
 The underlying Make targets are also available individually:
 
 ```sh
 make pulumi-preview
 make up
-make forward
-curl -s localhost:8081/hello
+make forward                   # http://localhost:8080
+curl -s localhost:8080/hello
 ```
+
+Use `make deploy` when you want preview and apply in one command; it avoids
+rebuilding between the two operations.
 
 ### Optional observability
 
