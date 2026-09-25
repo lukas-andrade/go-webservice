@@ -8,7 +8,6 @@ KIND_NODE_IMAGE := kindest/node:v1.33.1
 REGISTRY_NAME   := go-webservice-registry
 REGISTRY        := localhost:5002
 PULUMI_STACK    ?= dev
-PREVIEW_IMAGE   ?= $(REGISTRY)/echo-service:dry-run
 PREVIEW_FORMAT  ?= text
 PREVIEW_YAML    ?= infra/pulumi-preview.yaml
 
@@ -24,7 +23,7 @@ GO      := docker run --rm -v $(CURDIR):/src -w /src \
 TRIVY   := docker run --rm -v $(CURDIR):/src:ro -w /src -v trivycache:/root/.cache/trivy \
            $(TRIVY_IMAGE) --severity HIGH,CRITICAL --exit-code 1
 
-PULUMI  := docker run --rm --network kind -v $(CURDIR)/infra:/infra -w /infra \
+PULUMI  := docker run --rm --network kind -v $(CURDIR):/src -w /src/infra \
            -v gomodcache:/go/pkg/mod -v gobuildcache:/root/.cache/go-build \
            -e PULUMI_BACKEND_URL=file:///src/infra/.pulumi-state -e PULUMI_CONFIG_PASSPHRASE= \
            -e KUBECONFIG=/src/infra/.kubeconfig --entrypoint sh $(PULUMI_IMAGE) -c
@@ -32,8 +31,8 @@ OBSERVABILITY ?= false
 FORWARD_PORT  ?= 8080
 
 .DEFAULT_GOAL := help
-.PHONY: help build run stop logs wait cluster up down forward \
-        pulumi-preview \
+.PHONY: help build push-image run run-observability stop logs wait cluster host-kubeconfig pulumi-preview up deploy up-observability down \
+	        forward forward-grafana \
         test test-unit test-infra test-integration test-postman \
         lint vuln scan scan-fs scan-image ci
 
@@ -76,18 +75,37 @@ push-image: build cluster ## Push the content-addressed image to the Kind regist
 	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
 	docker tag $(IMAGE) $$image && docker push -q $$image && echo "Pushed $$image"
 
-pulumi-preview: push-image ## Preview the exact Kind deployment without applying it
+pulumi-preview: push-image ## Preview the exact Kind deployment (PREVIEW_FORMAT=text|yaml)
 	@mkdir -p infra/.pulumi-state
 	kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig
-	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
-	$(PULUMI) "pulumi stack select --create dev && pulumi config set image $$image && \
-		pulumi config set observability $(OBSERVABILITY) && pulumi preview --diff --non-interactive"
+	@if [ "$(PREVIEW_FORMAT)" = "yaml" ]; then \
+		set -e; \
+		if ! command -v yq >/dev/null 2>&1; then \
+			case "$$(uname -s)" in \
+				Darwin) command -v brew >/dev/null 2>&1 || { echo "yq is required for YAML output. Install Homebrew, then rerun." >&2; exit 1; }; brew install yq ;; \
+				Linux) . /etc/os-release 2>/dev/null || { echo "yq is required for YAML output; unsupported Linux distribution." >&2; exit 1; }; [ "$${ID:-}" = "ubuntu" ] || { echo "Automatic yq installation supports Ubuntu only." >&2; exit 1; }; command -v sudo >/dev/null 2>&1 || { echo "Install yq with: sudo apt-get install -y yq" >&2; exit 1; }; sudo -v && sudo apt-get update && sudo apt-get install -y yq ;; \
+				*) echo "Automatic yq installation supports macOS and Ubuntu only." >&2; exit 1 ;; \
+			esac; \
+		fi; \
+		preview_json=$$(mktemp); trap 'rm -f "$$preview_json"' EXIT; \
+		image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
+		$(PULUMI) "mkdir -p /src/infra/.pulumi-state && pulumi stack select --create $(PULUMI_STACK) && pulumi config set image $$image && pulumi config set observability $(OBSERVABILITY) && pulumi preview --json --non-interactive" > "$$preview_json"; \
+		yq_version="$$(yq --version 2>&1 || true)"; \
+		if printf '%s' "$$yq_version" | grep -qiE 'mikefarah|version v4'; then yq -P '.' "$$preview_json" > "$(PREVIEW_YAML)"; else yq -y '.' "$$preview_json" > "$(PREVIEW_YAML)"; fi; \
+		echo "Pulumi plan written to $(PREVIEW_YAML)"; \
+		cat "$(PREVIEW_YAML)"; \
+	elif [ "$(PREVIEW_FORMAT)" = "text" ]; then \
+		image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
+		$(PULUMI) "mkdir -p /src/infra/.pulumi-state && pulumi stack select --create $(PULUMI_STACK) && pulumi config set image $$image && pulumi config set observability $(OBSERVABILITY) && pulumi preview --diff --non-interactive"; \
+	else \
+		echo "Unsupported PREVIEW_FORMAT: $(PREVIEW_FORMAT). Use text or yaml." >&2; exit 2; \
+	fi
 
 up: push-image ## Kind cluster + local registry, push the image, pulumi up
 	@mkdir -p infra/.pulumi-state
 	kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig
 	@image=$(REGISTRY)/echo-service:$$(docker image inspect -f '{{.Id}}' $(IMAGE) | cut -c8-19); \
-	$(PULUMI) "pulumi stack select --create dev && pulumi config set image $$image && \
+	$(PULUMI) "mkdir -p /src/infra/.pulumi-state && pulumi stack select --create $(PULUMI_STACK) && pulumi config set image $$image && \
 		pulumi config set observability $(OBSERVABILITY) && pulumi up --yes --skip-preview"
 	@echo "Deployed. Run make forward, then curl localhost:8080/hello"
 
@@ -97,44 +115,9 @@ up-observability: ## Same as up, plus the observability stack installed with Hel
 	$(MAKE) up OBSERVABILITY=true
 	@echo "Grafana: make forward-grafana, then open http://localhost:3001"
 
-pulumi-preview: cluster ## Create Kind if needed and run Pulumi dry-run only. Use make pulumi-preview PREVIEW_FORMAT=yaml to see plan in yaml
-	@mkdir -p infra/.pulumi-state
-	kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig
-	@if [ "$(PREVIEW_FORMAT)" = "yaml" ]; then \
-		set -e; \
-		if ! command -v yq >/dev/null 2>&1; then \
-			case "$$(uname -s)" in \
-				Darwin) \
-					command -v brew >/dev/null 2>&1 || { echo "yq is required for YAML output. Install Homebrew, then rerun." >&2; exit 1; }; \
-					brew install yq ;; \
-				Linux) \
-					. /etc/os-release 2>/dev/null || { echo "yq is required for YAML output; unsupported Linux distribution." >&2; exit 1; }; \
-					[ "$${ID:-}" = "ubuntu" ] || { echo "Automatic yq installation supports Ubuntu only." >&2; exit 1; }; \
-					command -v sudo >/dev/null 2>&1 || { echo "Install yq with: sudo apt-get install -y yq" >&2; exit 1; }; \
-					sudo -v || { echo "sudo authentication was not completed." >&2; exit 1; }; \
-					sudo apt-get update && sudo apt-get install -y yq ;; \
-				*) echo "Automatic yq installation supports macOS and Ubuntu only." >&2; exit 1 ;; \
-			esac; \
-		fi; \
-		preview_json=$$(mktemp); trap 'rm -f "$$preview_json"' EXIT; \
-		$(PULUMI) "set -e; pulumi stack select --create $(PULUMI_STACK); if ! pulumi config get image >/dev/null 2>&1; then pulumi config set image $(PREVIEW_IMAGE); fi; pulumi preview --json --non-interactive" > "$$preview_json"; \
-		yq_version="$$(yq --version 2>&1 || true)"; \
-		if printf '%s' "$$yq_version" | grep -qiE 'mikefarah|version v4'; then \
-			yq -P '.' "$$preview_json" > "$(PREVIEW_YAML)"; \
-		else \
-			yq -y '.' "$$preview_json" > "$(PREVIEW_YAML)"; \
-		fi; \
-		echo "Pulumi plan written to $(PREVIEW_YAML)"; \
-		cat infra/pulumi-preview.yaml; \
-	elif [ "$(PREVIEW_FORMAT)" = "text" ]; then \
-		$(PULUMI) "set -e; pulumi stack select --create $(PULUMI_STACK); if ! pulumi config get image >/dev/null 2>&1; then pulumi config set image $(PREVIEW_IMAGE); fi; pulumi preview --diff --non-interactive"; \
-	else \
-		echo "Unsupported PREVIEW_FORMAT: $(PREVIEW_FORMAT). Use text or yaml." >&2; exit 2; \
-	fi
-
 down: ## pulumi destroy, then delete the Kind cluster and registry
 	-kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig && \
-		$(PULUMI) "pulumi stack select $(PULUMI_STACK) && pulumi destroy --yes --skip-preview"
+		$(PULUMI) "mkdir -p /src/infra/.pulumi-state && pulumi stack select $(PULUMI_STACK) && pulumi destroy --yes --skip-preview"
 	kind delete cluster --name $(KIND_CLUSTER)
 	docker rm -f $(REGISTRY_NAME)
 
