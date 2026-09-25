@@ -160,11 +160,48 @@ Needs Docker, [Kind](https://kind.sigs.k8s.io/) and `kubectl`. Pulumi runs
 in a container, so it doesn't need to be installed.
 
 ```sh
+make pulumi-preview # create Kind if needed; show the Pulumi plan; apply nothing
 make up        # cluster + registry, build and push the image, pulumi up
 make forward   # port-forward the Service to localhost:8081
 curl -s localhost:8081/hello
 make down      # pulumi destroy, then delete the cluster and registry
 ```
+
+`make pulumi-preview` is the local dry-run workflow. It creates (or reuses)
+the local Kind cluster because Pulumi's Kubernetes provider contacts the API
+server while planning, then runs `pulumi preview --diff`. It uses the image
+already configured in the selected stack; for a new stack only, it sets a
+synthetic image reference. It does not build or push an image, pull an image,
+or create/update/delete Kubernetes resources. It can create local Pulumi stack
+metadata in the gitignored `infra/.pulumi-state` directory.
+
+To write the structured Pulumi plan as YAML:
+
+```sh
+make pulumi-preview PREVIEW_FORMAT=yaml
+cat infra/pulumi-preview.yaml
+```
+
+The Make target checks for `yq`. On macOS it installs it through Homebrew; on
+Ubuntu it installs it through `apt-get` (and may request your `sudo` password).
+This YAML is a readable representation of Pulumi's preview events, not a
+Kubernetes manifest. To print resources that are already deployed, use:
+
+```sh
+kubectl --context kind-go-webservice get deployment,service -o yaml
+```
+
+After reviewing a successful preview, deploy and test the real image:
+
+```sh
+make up
+make forward
+curl -s 'http://localhost:8081/hello?name=ana' -d '{"hi":true}' | jq
+```
+
+Keep `make forward` running in one terminal; it is the local connection to
+the `ClusterIP` Service in Kind. Stop it with `Ctrl-C` when done, then remove
+the test environment with `make down`.
 
 `make up` is safe to run again: it only creates what's missing, and a rerun
 with no code changes reports `4 unchanged`.

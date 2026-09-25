@@ -50,3 +50,18 @@ jobs:
         run: make scan-fs
       - name: Trivy image
         run: make scan-image
+
+  pulumi-preview:
+    name: Pulumi dry-run (Kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Preview Kubernetes infrastructure without applying it
+        run: make pulumi-preview
+      - if: failure()
+        name: Show Kind diagnostics
+        run: kubectl --context kind-go-webservice get events -A --sort-by=.lastTimestamp
+      - if: always()
+        name: Remove the ephemeral Kind cluster
+        run: make down
