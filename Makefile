@@ -31,9 +31,6 @@ GO      := docker run --rm -v $(CURDIR):/src -w /src \
 TRIVY   := docker run --rm -v $(CURDIR):/src:ro -w /src -v trivycache:/root/.cache/trivy \
            $(TRIVY_IMAGE) --severity HIGH,CRITICAL --exit-code 1
 
-# Pulumi joins the kind network and uses the cluster's internal kubeconfig.
-# State lives in infra/.pulumi-state; the passphrase only guards secrets in
-# that local file, and this stack has none.
 PULUMI  := docker run --rm --network kind -v $(CURDIR)/infra:/infra -w /infra \
            -v gomodcache:/go/pkg/mod -v gobuildcache:/root/.cache/go-build \
            -e PULUMI_BACKEND_URL=file:///infra/.pulumi-state -e PULUMI_CONFIG_PASSPHRASE= \
@@ -64,8 +61,6 @@ wait: run
 	@for i in $$(seq 30); do curl -sf localhost:9090/readyz >/dev/null && exit 0; sleep 1; done; \
 		echo "echo-service did not become ready"; exit 1
 
-# Inside the node, localhost:5002 is the node itself, so containerd is told
-# to pull those images from the registry container on the kind network.
 cluster:
 	@docker pull --platform linux/$(ARCH) $(KIND_NODE_IMAGE)
 	@kind get clusters | grep -qx $(KIND_CLUSTER) || \
@@ -75,8 +70,6 @@ cluster:
 	@docker inspect $(REGISTRY_NAME) >/dev/null 2>&1 || \
 		docker run -d --restart=always --network kind -p 127.0.0.1:5002:5000 --name $(REGISTRY_NAME) registry:3.1.2
 
-# The image is tagged with its own content hash, so Kubernetes only rolls
-# out a new version when the image actually changed.
 up: build cluster ## Kind cluster + local registry, push the image, pulumi up
 	@mkdir -p infra/.pulumi-state
 	kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig
@@ -85,11 +78,6 @@ up: build cluster ## Kind cluster + local registry, push the image, pulumi up
 	$(PULUMI) "pulumi stack select --create $(PULUMI_STACK) && pulumi config set image $$image && pulumi up --yes --skip-preview"
 	@echo "Deployed. Try: make forward, then curl localhost:8081/hello"
 
-# This is a real Pulumi preview against Kind. The cluster is needed because
-# the Kubernetes provider contacts its API server during planning. The image
-# The image value is synthetic only for a new stack: preview creates no
-# Kubernetes resources and does not pull or push it. PREVIEW_FORMAT=yaml
-# writes Pulumi's structured plan (not Kubernetes manifests) to PREVIEW_YAML.
 pulumi-preview: cluster ## Create Kind if needed and run Pulumi dry-run only. Use make pulumi-preview PREVIEW_FORMAT=yaml to see plan in yaml
 	@mkdir -p infra/.pulumi-state
 	kind get kubeconfig --internal --name $(KIND_CLUSTER) > infra/.kubeconfig
