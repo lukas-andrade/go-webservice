@@ -19,22 +19,25 @@ func TestServiceEcho(t *testing.T) {
 				Params:  map[string][]string{"expand": {"items", "customer"}},
 				Body:    []byte(`{"id": 42}`),
 			},
-			wantJSON: `{"headers":{"Content-Type":["application/json"]},"params":{"expand":["items","customer"]},"body":{"id":42},"path":"/orders/42"}`,
+			wantJSON: `{"Headers":{"Content-Type":"application/json"},"Params":{"expand":["items","customer"]},"Body":{"id":42},"Path":"/orders/42"}`,
+		},
+		{
+			name: "repeated headers are joined",
+			req: Request{
+				Path:    "/",
+				Headers: map[string][]string{"Accept": {"text/html", "application/json"}},
+			},
+			wantJSON: `{"Headers":{"Accept":"text/html, application/json"},"Params":{},"Body":"","Path":"/"}`,
 		},
 		{
 			name:     "plain text body is returned as a string",
 			req:      Request{Path: "/", Body: []byte("hello there")},
-			wantJSON: `{"headers":{},"params":{},"body":"hello there","path":"/"}`,
-		},
-		{
-			name:     "empty body becomes an empty string",
-			req:      Request{Path: "/empty"},
-			wantJSON: `{"headers":{},"params":{},"body":"","path":"/empty"}`,
+			wantJSON: `{"Headers":{},"Params":{},"Body":"hello there","Path":"/"}`,
 		},
 		{
 			name:     "broken json falls back to a string",
 			req:      Request{Path: "/", Body: []byte(`{"id":`)},
-			wantJSON: `{"headers":{},"params":{},"body":"{\"id\":","path":"/"}`,
+			wantJSON: `{"Headers":{},"Params":{},"Body":"{\"id\":","Path":"/"}`,
 		},
 	}
 

@@ -40,24 +40,11 @@ func (h *Echo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp := h.svc.Echo(echo.Request{
 		Path:    r.URL.Path,
-		Headers: headersWithHost(r),
+		Headers: r.Header,
 		Params:  r.URL.Query(),
 		Body:    body,
 	})
 	writeJSON(w, http.StatusOK, resp)
-}
-
-// net/http moves Host out of the header map; put it back so the echo shows
-// what the client actually sent.
-func headersWithHost(r *http.Request) map[string][]string {
-	h := r.Header.Clone()
-	if h == nil {
-		h = http.Header{}
-	}
-	if r.Host != "" {
-		h.Set("Host", r.Host)
-	}
-	return h
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

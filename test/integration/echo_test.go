@@ -24,10 +24,10 @@ var (
 )
 
 type echoResponse struct {
-	Headers map[string][]string `json:"headers"`
-	Params  map[string][]string `json:"params"`
-	Body    json.RawMessage     `json:"body"`
-	Path    string              `json:"path"`
+	Headers map[string]string   `json:"Headers"`
+	Params  map[string][]string `json:"Params"`
+	Body    json.RawMessage     `json:"Body"`
+	Path    string              `json:"Path"`
 }
 
 func TestMain(m *testing.M) {
@@ -97,11 +97,8 @@ func TestEchoGetWithQueryAndHeaders(t *testing.T) {
 	if c := got.Params["color"]; len(c) != 2 || c[0] != "red" || c[1] != "blue" {
 		t.Errorf("params = %v", got.Params)
 	}
-	if id := got.Headers["X-Request-Id"]; len(id) != 1 || id[0] != "it-123" {
+	if got.Headers["X-Request-Id"] != "it-123" {
 		t.Errorf("headers = %v", got.Headers)
-	}
-	if len(got.Headers["Host"]) != 1 {
-		t.Errorf("host header missing: %v", got.Headers)
 	}
 }
 

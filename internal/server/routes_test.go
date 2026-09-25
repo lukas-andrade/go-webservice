@@ -18,7 +18,7 @@ func TestPublicHandlerEchoesReservedLookingPaths(t *testing.T) {
 	for _, path := range []string{"/metrics", "/healthz", "/anything/at/all"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"path":"`+path+`"`) {
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"Path":"`+path+`"`) {
 			t.Errorf("%s: status %d body %s", path, rec.Code, rec.Body.String())
 		}
 	}

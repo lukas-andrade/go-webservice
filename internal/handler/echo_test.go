@@ -14,10 +14,10 @@ import (
 )
 
 type echoResponse struct {
-	Headers map[string][]string `json:"headers"`
-	Params  map[string][]string `json:"params"`
-	Body    json.RawMessage     `json:"body"`
-	Path    string              `json:"path"`
+	Headers map[string]string   `json:"Headers"`
+	Params  map[string][]string `json:"Params"`
+	Body    json.RawMessage     `json:"Body"`
+	Path    string              `json:"Path"`
 }
 
 type spyEchoer struct {
@@ -50,14 +50,8 @@ func TestEchoMapsRequestForService(t *testing.T) {
 	if got := spy.got.Headers["X-Trace"]; len(got) != 1 || got[0] != "abc" {
 		t.Errorf("headers = %v", spy.got.Headers)
 	}
-	if got := spy.got.Headers["Host"]; len(got) != 1 || got[0] != "echo.local" {
-		t.Errorf("host header = %v", got)
-	}
 	if string(spy.got.Body) != "payload" {
 		t.Errorf("body = %q", spy.got.Body)
-	}
-	if _, ok := req.Header["Host"]; ok {
-		t.Error("handler must not mutate the incoming request headers")
 	}
 }
 

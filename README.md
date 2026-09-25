@@ -24,16 +24,15 @@ make down
 
 ```json
 {
-  "headers": {
-    "Accept": ["*/*"],
-    "Content-Length": ["11"],
-    "Content-Type": ["application/x-www-form-urlencoded"],
-    "Host": ["localhost:8080"],
-    "User-Agent": ["curl/8.7.1"]
+  "Headers": {
+    "Accept": "*/*",
+    "Content-Length": "11",
+    "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": "curl/8.7.1"
   },
-  "params": { "name": ["ana"] },
-  "body": { "hi": true },
-  "path": "/hello"
+  "Params": { "name": ["ana"] },
+  "Body": { "hi": true },
+  "Path": "/hello"
 }
 ```
 
@@ -43,20 +42,21 @@ Run `make` with no arguments to list every target.
 
 ### Public port (`PORT`, default `8080`)
 
-Every path and method is echoed with `200 application/json`:
+Every path and method is echoed with `200 application/json`. The field names
+match the brief:
 
 | Field     | Type                  | Notes                                                        |
 |-----------|-----------------------|--------------------------------------------------------------|
-| `headers` | `map[string][]string` | Includes `Host`, which Go normally strips from the header map |
-| `params`  | `map[string][]string` | Repeated keys keep their order: `?a=1&a=2` → `["1","2"]`      |
-| `body`    | JSON or string        | Valid JSON is embedded as-is; anything else is a string; empty is `""` |
-| `path`    | `string`              |                                                              |
+| `Headers` | `map[string]string`   | Repeated headers are joined with `", "`, as RFC 9110 allows  |
+| `Params`  | `map[string][]string` | Go's `url.Values`: `?a=1&a=2` → `["1","2"]`. Joining query values would lose data, since a value can contain a comma |
+| `Body`    | JSON or string        | Valid JSON is embedded as-is; anything else is a string; empty is `""` |
+| `Path`    | `string`              |                                                              |
 
-Values are arrays because HTTP allows repeated headers and query keys, and
-flattening them would lose data.
-
-Errors come back as `{"error": "..."}`: `413` when the body is over
-`MAX_BODY_BYTES`, `400` when it can't be read.
+The one exception to "every request gets an echo" is a body over
+`MAX_BODY_BYTES` (1 MiB by default), which gets `413 {"error": "..."}`.
+Without that cap, a single client could exhaust the service's memory. A
+body that can't be read (for example, a client that disconnects mid-upload)
+gets `400`.
 
 ### Admin port (`ADMIN_PORT`, default `9090`)
 

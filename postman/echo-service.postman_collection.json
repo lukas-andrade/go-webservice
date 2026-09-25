@@ -58,10 +58,9 @@
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
                   "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
                   "const echo = pm.response.json();",
-                  "pm.test('echoes the path', () => pm.expect(echo.path).to.eql('/v1/products/7'));",
-                  "pm.test('keeps repeated params', () => pm.expect(echo.params.color).to.eql(['red', 'blue']));",
-                  "pm.test('echoes headers', () => pm.expect(echo.headers['X-Client']).to.eql(['postman']));",
-                  "pm.test('includes Host', () => pm.expect(echo.headers).to.have.property('Host'));"
+                  "pm.test('echoes the path', () => pm.expect(echo.Path).to.eql('/v1/products/7'));",
+                  "pm.test('keeps repeated params', () => pm.expect(echo.Params.color).to.eql(['red', 'blue']));",
+                  "pm.test('echoes headers', () => pm.expect(echo.Headers['X-Client']).to.eql('postman'));"
                 ]
               }
             }
@@ -105,7 +104,7 @@
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
                   "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
                   "const echo = pm.response.json();",
-                  "pm.test('body is returned as JSON', () => pm.expect(echo.body).to.eql({ sku: 'A1', qty: 3 }));"
+                  "pm.test('body is returned as JSON', () => pm.expect(echo.Body).to.eql({ sku: 'A1', qty: 3 }));"
                 ]
               }
             }
@@ -150,7 +149,7 @@
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
                   "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
                   "const echo = pm.response.json();",
-                  "pm.test('body is returned as a string', () => pm.expect(echo.body).to.eql('just some text'));"
+                  "pm.test('body is returned as a string', () => pm.expect(echo.Body).to.eql('just some text'));"
                 ]
               }
             }
@@ -187,8 +186,8 @@
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
                   "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
                   "const echo = pm.response.json();",
-                  "pm.test('empty body is an empty string', () => pm.expect(echo.body).to.eql(''));",
-                  "pm.test('params is an empty object', () => pm.expect(echo.params).to.eql({}));"
+                  "pm.test('empty body is an empty string', () => pm.expect(echo.Body).to.eql(''));",
+                  "pm.test('params is an empty object', () => pm.expect(echo.Params).to.eql({}));"
                 ]
               }
             }
@@ -224,7 +223,7 @@
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
                   "pm.test('responds with JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/json'));",
                   "const echo = pm.response.json();",
-                  "pm.test('echoes /metrics instead of serving metrics', () => pm.expect(echo.path).to.eql('/metrics'));"
+                  "pm.test('echoes /metrics instead of serving metrics', () => pm.expect(echo.Path).to.eql('/metrics'));"
                 ]
               }
             }
