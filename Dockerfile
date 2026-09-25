@@ -16,6 +16,7 @@ LABEL org.opencontainers.image.title="echo-service" \
 
 COPY --from=build /out/echo-service /echo-service
 
-USER nonroot:nonroot
+# Numeric so Kubernetes can enforce runAsNonRoot; 65532 is distroless "nonroot".
+USER 65532:65532
 EXPOSE 8080 9090
 ENTRYPOINT ["/echo-service"]

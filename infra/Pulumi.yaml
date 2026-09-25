@@ -1,0 +1,11 @@
+name: go-webservice
+description: Deploys the echo-service to Kubernetes
+runtime: go
+
+config:
+  image:
+    type: string
+    description: Container image to deploy, set by `make up` on every run
+  replicas:
+    type: integer
+    default: 2

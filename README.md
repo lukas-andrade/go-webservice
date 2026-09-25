@@ -5,8 +5,8 @@ sends back as JSON: headers, query params, body and path.
 
 This repo is being built in steps, one PR each:
 
-1. **Echo service**: the Go app, tests, Docker, CI and security scans *(this PR)*
-2. Pulumi (Go) deploying a `Deployment` and `Service` to a local Kind cluster, local state file
+1. **Echo service**: the Go app, tests, Docker, CI and security scans
+2. **Kubernetes**: Pulumi (Go) deploying a `Deployment` and `Service` to a local Kind cluster, with a local state file
 3. `scripts/ci.sh` (test, build, push to a local registry) and `SETUP.md`
 
 ## Quick start
@@ -17,10 +17,12 @@ Makefile runs tests, linters and scanners in throwaway `docker run`
 containers.
 
 ```sh
-make up                          # echo on :8080, admin on :9090
+make run                         # docker compose: echo on :8080, admin on :9090
 curl -s 'localhost:8080/hello?name=ana' -d '{"hi":true}' | jq
-make down
+make stop
 ```
+
+To run it on Kubernetes instead, see [Kubernetes](#kubernetes-kind--pulumi).
 
 ```json
 {
@@ -95,6 +97,7 @@ internal/
   telemetry/              Prometheus metrics and OpenTelemetry tracing
 test/integration/         black-box tests against the running container
 postman/                  collection and environments
+infra/                    Pulumi program (its own Go module) and the Kind cluster config
 ```
 
 Each package has a single job, and they're joined by composition rather than
@@ -144,17 +147,61 @@ through a single handler instance.
 
 - `http.Server` read, write, header and idle timeouts (guards against slowloris)
 - Request bodies capped with `http.MaxBytesReader`
-- Static binary on `distroless/static:nonroot`: no shell, no package manager, non-root user
-- Compose runs the container with a read-only filesystem and `no-new-privileges`
+- Static binary on `distroless/static`, running as UID `65532`: no shell, no
+  package manager, not root. The UID is numeric so Kubernetes can enforce
+  `runAsNonRoot`; with a user name, the pod is refused.
+- Compose and Kubernetes both run the container with a read-only filesystem
+  and no privilege escalation
 - Structured JSON logs through `log/slog`
+
+## Kubernetes (Kind + Pulumi)
+
+Needs Docker, [Kind](https://kind.sigs.k8s.io/) and `kubectl`. Pulumi runs
+in a container, so it doesn't need to be installed.
+
+```sh
+make up        # cluster + registry, build and push the image, pulumi up
+make forward   # port-forward the Service to localhost:8081
+curl -s localhost:8081/hello
+make down      # pulumi destroy, then delete the cluster and registry
+```
+
+`make up` is safe to run again: it only creates what's missing, and a rerun
+with no code changes reports `4 unchanged`.
+
+How it fits together:
+
+- **Cluster and registry.** `infra/kind/cluster.yaml` creates the cluster,
+  and a `registry:3` container on `localhost:5002` sits on the `kind`
+  network. A local registry is the option the brief prefers over
+  `kind load`. Port 5002 avoids the 5001 used in the kind docs, which is
+  often already taken by another project.
+- **Image tag.** The image is pushed as
+  `localhost:5002/echo-service:<content hash>`. Kubernetes rolls out only
+  when the image actually changed, and never deploys a stale `latest`.
+- **Pulumi program.** `infra/` is its own Go module, so the service doesn't
+  pick up Pulumi's dependencies. `echoservice.EchoService` is a component
+  resource that owns the `Deployment` and `Service`, and `main.go` only
+  reads config and creates it. State is a local file in
+  `infra/.pulumi-state` (gitignored), with no Pulumi Cloud account needed.
+- **Configuration.** `Pulumi.yaml` declares `image` and `replicas`
+  (default 2). `make up` sets `image` on every run, so no stack file is
+  committed.
+- **Deployment.** Two replicas; liveness and readiness probes on the admin
+  port; CPU and memory requests plus a memory limit; non-root, read-only
+  root filesystem, all capabilities dropped, `RuntimeDefault` seccomp.
+  `pulumi up` waits until the pods are ready, and gives up after 3 minutes.
+- **Service.** `ClusterIP` on port 80, pointing at the container's `http`
+  port. Only the echo is exposed, not the admin port.
 
 ## Testing
 
 ```sh
 make test-unit          # unit tests, race detector, coverage → coverage.out
+make test-infra         # Pulumi program tests with Pulumi mocks, no cluster needed
 make test-integration   # builds the image, starts it, runs test/integration
 make test-postman       # runs the Postman collection with newman
-make test               # all three
+make test               # all four
 ```
 
 - **Unit tests** use only the standard library, plus Prometheus `testutil`.
@@ -164,6 +211,9 @@ make test               # all three
 - **Integration tests** (`//go:build integration`) treat the Docker image as a
   black box over the network: query params, JSON and text bodies, every
   method, the 413 limit, probes and metrics.
+- **Infra tests** run the Pulumi program against mocks and check what it
+  would create: image, replicas, probes on the admin port, security
+  context, and that the Service selector matches the pod labels.
 - **Postman**: import `postman/echo-service.postman_collection.json` together
   with `postman/local.postman_environment.json`. Every request has
   assertions, so the collection doubles as a smoke test.
@@ -176,16 +226,23 @@ make vuln    # govulncheck: known CVEs in code paths that are actually called
 make scan    # govulncheck + Trivy on the repo (deps, secrets, Dockerfile) and on the built image
 ```
 
+Lint and govulncheck cover both Go modules, the service and `infra/`.
+
 Trivy fails the build on any `HIGH` or `CRITICAL` finding. The image scan
 skips CVEs that don't have a fix yet, since there's nothing to upgrade to.
-This already
-caught a real one while building this PR: a gRPC DoS (CVE-2026-84445) pulled
-in by the OTLP exporter, fixed by moving to `google.golang.org/grpc v1.83.2`.
+It has caught two real ones so far:
+
+- A gRPC DoS (CVE-2026-84445) pulled in by the OTLP exporter, fixed by
+  moving to `google.golang.org/grpc v1.83.2`.
+- A go-git symlink file read/write (CVE-2026-71556) pulled in by the Pulumi
+  SDK, fixed by moving to `go-git v6.0.0-alpha.5`. govulncheck didn't flag
+  it because the program never calls that code, which is why both scanners
+  run.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on every push and on PRs to `main`, with
-three parallel jobs: **lint**, **test** (unit, integration, Postman) and
+three parallel jobs: **lint**, **test** (unit, infra, integration, Postman) and
 **security** (govulncheck, Trivy fs, Trivy image). Each job calls the same
 `make` targets you run locally. The workflow token is read-only and the
 checkout action is pinned to a commit SHA. Dependabot keeps Go modules, base
