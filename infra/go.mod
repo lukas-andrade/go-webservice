@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/pulumi/pulumi-kubernetes/sdk/v4 v4.34.2
-	github.com/pulumi/pulumi/sdk/v3 v3.264.0
+	github.com/pulumi/pulumi/sdk/v3 v3.265.0
 	sigs.k8s.io/yaml v1.6.0
 )
 
